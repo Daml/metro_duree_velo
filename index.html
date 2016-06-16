@@ -115,10 +115,10 @@
                     app.loadDestinations();
                 }),
 
-            // Destinations POI
-            destinations: [
+            // Destination POIs
+            pois: [
                 {name: "Gare SNCF", city: "Grenoble", loc: L.latLng(45.19141330598916 ,  5.714312195777892)},
-//                {name: "Minatec", city: "Grenoble", loc: L.latLng(45.19556416872782 ,  5.709092617034911)},
+                {name: "Minatec", city: "Grenoble", loc: L.latLng(45.19556416872782 ,  5.709092617034911)},
                 {name: "La Source", city: "Fontaine", loc: L.latLng(45.19086890809178 ,  5.68790316581726)},
                 {name: "Parc Paul Mistral", city: "Grenoble", loc: L.latLng(45.184970930433614 ,  5.736966133117676)},
                 {name: "Plaine des Sports", city: "Gières", loc: L.latLng(45.1875, 5.7848)},
@@ -169,11 +169,11 @@
                 app.clean();
 
                 if ((typeof cnt === "undefined") || (cnt < 0)) {
-                    cnt = 5;
+                    cnt = 4;
                 }
 
-                if (app.destinations.length < cnt) {
-                    cnt = app.destinations.length;
+                if (app.pois.length < cnt) {
+                    cnt = app.pois.length;
                 }
 
                 var colors = [
@@ -184,9 +184,43 @@
                     "grey",
                 ];
 
-                for (var i = 0; i < cnt; i++) {
-                    app.loadDestination(app.destinations[i], colors[i]);
+                var pois = _.map(_.shuffle(app.pois), function (poi) {
+                    return {
+                        poi: poi,
+                        distance: app.origin.getLatLng().distanceTo(poi.loc),
+                        bearing: geo.Bearing(app.origin.getLatLng(), poi.loc),
+                    };
+                });
+
+                var destinations = _.pluck(_.reduce(pois, function(result, item) {
+                    if (result.length >= cnt) {
+                        return result;
+                    }
+
+                    if ((item.distance < 500) || (item.distance > 10000)) {
+                        return result;
+                    }
+
+                    for (var i = 0; i < result.length; i++) {
+                        var deg = Math.abs(Math.min((360 - result[i].bearing) - item.bearing, result[i].bearing - item.bearing));
+                        if (deg < (360 / (cnt + 2))) {
+                            if (item.poi.loc.distanceTo(result[i].poi.loc) < 1000) {
+                                return result;
+                            }
+                        }
+                    }
+
+                    result.push(item);
+                    return result;
+                }, []), "poi");
+
+                for (var i = 0; i < destinations.length; i++) {
+                    app.loadDestination(destinations[i], colors[i]);
                 }
+
+                window.setTimeout(function () {
+                    map.fitBounds(L.latLngBounds(_.union([app.origin.getLatLng()], _.pluck(destinations, "loc"))), {padding: [50, 50]});
+                }, 400);
             },
 
             // Load and draw one destination POI
@@ -256,7 +290,9 @@
         // Let's rock !
         // ------------
 
-        Backbone.history.start();
+        $(document).ready(function() {
+            Backbone.history.start();
+        });
 
         }());
         </script>
