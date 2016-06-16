@@ -55,6 +55,23 @@
       return polylineLatLngs;
     };
 
+    geo.Bearing = function(from, to) {
+        var a, b, c, d, x, y;
+        if (!(from instanceof L.LatLng)) {
+          throw new TypeError('Bearing: from must be a L.LatLng');
+        }
+        if (!(to instanceof L.LatLng)) {
+          throw new TypeError('Bearing: to must be a L.LatLng');
+        }
+        a = (to.lng * L.LatLng.DEG_TO_RAD) - (from.lng * L.LatLng.DEG_TO_RAD);
+        b = to.lat * L.LatLng.DEG_TO_RAD;
+        c = Math.cos(b);
+        d = from.lat * L.LatLng.DEG_TO_RAD;
+        y = Math.sin(a) * c;
+        x = Math.cos(d) * Math.sin(b) - Math.sin(d) * c * Math.cos(a);
+        return (Math.atan2(y, x) * L.LatLng.RAD_TO_DEG + 360) % 360;
+    };
+
     // Export
     window.geo = geo;
 }(window));
