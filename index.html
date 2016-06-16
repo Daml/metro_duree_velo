@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <title>Durée trajets vélo @ Grenoble Alpes Métropole</title>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css" />
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/zepto/1.1.6/zepto.js"></script>
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet-src.js"></script>
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore.js"></script>
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/backbone.js/1.3.3/backbone.js"></script>
+        <script type="text/javascript" src="utils.js"></script>
+        <style type="text/css">
+            body {
+                padding: 0;
+                margin: 0;
+            }
+            html, body, #map {
+                height: 100%;
+            }
+            .icon {
+                opacity: 0.8;
+                border: 3px solid grey;
+                border-radius: 3px;
+                background: #fff;
+                color: grey;
+                width: 120px!important;
+                height: 35px!important;
+                left: -60px;
+                text-align: center;
+                /*overflow: hidden;*/
+            }
+            .icon-green {
+                border: 3px solid green;
+                color: green;
+            }
+            .icon-blue {
+                border: 3px solid blue;
+                color: blue;
+            }
+            .icon-red {
+                border: 3px solid red;
+                color: red;
+            }
+            .icon-orange {
+                border: 3px solid orange;
+                color: orange;
+            }
+            .icon-grey {
+                border: 3px solid grey;
+                color: grey;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="map"></div>
+        <script>
+        (function () {
+           "use strict";
+
+        // Leaflet map init
+        // ----------------
+
+        var map = L.map("map")
+            .setView(L.latLng(45.1793, 5.7169), 13)
+            .on("move", function () {
+                app.updateUri();
+            })
+            .on("click", function (e) {
+                console.log("Click on map at ", geo.Round(e.latlng.lat) + ", " + geo.Round(e.latlng.lng));
+            });
+
+        // Layers & controls
+        // -----------------
+
+        L.control.layers({
+            "OSM": L.tileLayer("//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: "Itinéraires &copy; <a href=http://www.metromobilite.fr/>Metromobilité</a> | Carte & données &copy; <a href=http://osm.org/copyright>OpenStreetMap</a> contributors"
+            }).addTo(map),
+            "Vélo": L.tileLayer("//{s}.tile.thunderforest.com/cycle/{z}/{x}/{y}.png", {
+                attribution: "Itinéraires &copy; <a href=http://www.metromobilite.fr/>Metromobilité</a> | Carte &copy; <a href=http://www.thunderforest.com/>Thunderforest</a> | Données &copy; <a href=http://osm.org/copyright>OpenStreetMap</a> contributors"
+            }),
+            "Toner": L.tileLayer("//{s}.tile.stamen.com/toner/{z}/{x}/{y}.png", {
+                attribution: "Itinéraires &copy; <a href=http://www.metromobilite.fr/>Metromobilité</a> | Carte &copy; <a href=http://stamen.com/>Stamen Design</a> | Données &copy; <a href=http://osm.org/copyright>OpenStreetMap</a> contributors"
+            }),
+        }).addTo(map);
+
+        // Contours métropole
+        // ------------------
+
+        $.getJSON("metro.json", function (data) {
+            L.geoJson(data, {
+                fill: false,
+                color: "black",
+            }).addTo(map);
+        });
+
+        // App stuff
+        // ---------
+
+        var app = new (Backbone.Router.extend({
+            // Register routes
+            routes: {
+                "map/:z/:lat/:lng/:olat/:olng": "showMap"
+            },
+
+            // Origin marker & binding
+            origin: L.marker(L.latLng(45.1923, 5.6951), {draggable: true, title: "Origine"})
+                .addTo(map)
+                .bindPopup("Origine")
+                .on("dragend", function () {
+                    app.updateMarker(app.origin);
+                    app.updateUri();
+                    app.loadDestinations();
+                }),
+
+            // Destinations POI
+            destinations: [
+                {name: "Gare SNCF", city: "Grenoble", loc: L.latLng(45.19141330598916 ,  5.714312195777892)},
+//                {name: "Minatec", city: "Grenoble", loc: L.latLng(45.19556416872782 ,  5.709092617034911)},
+                {name: "La Source", city: "Fontaine", loc: L.latLng(45.19086890809178 ,  5.68790316581726)},
+                {name: "Parc Paul Mistral", city: "Grenoble", loc: L.latLng(45.184970930433614 ,  5.736966133117676)},
+                {name: "Plaine des Sports", city: "Gières", loc: L.latLng(45.1875, 5.7848)},
+                {name: "Lycée du Grésivaudan", city: "Meylan", loc: L.latLng(45.2154, 5.7834)},
+            ],
+
+            // Store LayerGroup for easy cleaning
+            overlays: [],
+
+            // Display the map (on load or URI change)
+            showMap: function (z, lat, lng, olat, olng) {
+                console.log("Show map : Zoom ", z, "Center", lat + "," + lng, "From", olat + "," + olng);
+                map.setView(L.latLng(lat, lng), z);
+                this.origin.setLatLng(L.latLng(olat, olng));
+                this.updateMarker(this.origin);
+                this.loadDestinations();
+            },
+
+            // Update URI with current map status
+            updateUri: function () {
+                var center = map.getCenter(),
+                    uri = "map/" + map.getZoom() +
+                        "/" + geo.Round(center.lat) + "/" + geo.Round(center.lng) +
+                        "/" + geo.Round(app.origin.getLatLng().lat) + "/" + geo.Round(app.origin.getLatLng().lng);
+
+                app.navigate(uri, {trigger: false});
+            },
+
+            // Reverse geocoding of a marker using FR/BAN
+            updateMarker: function (marker) {
+                var uri = "//api-adresse.data.gouv.fr/reverse/?lon=" +
+                    geo.Round(marker.getLatLng().lng)+ "&lat=" + geo.Round(marker.getLatLng().lat);
+
+                $.getJSON(uri, function (data) {
+                    marker.setPopupContent(data.features[0].properties.label);
+                });
+            },
+
+            // Remove LayerGroup overlays
+            clean: function () {
+                for (var i = 0; i < app.overlays.length; i++) {
+                    map.removeLayer(app.overlays[i]);
+                }
+            },
+
+            // Select and load destinations POI
+            loadDestinations: function (cnt) {
+                app.clean();
+
+                if ((typeof cnt === "undefined") || (cnt < 0)) {
+                    cnt = 5;
+                }
+
+                if (app.destinations.length < cnt) {
+                    cnt = app.destinations.length;
+                }
+
+                var colors = [
+                    "green",
+                    "blue",
+                    "red",
+                    "orange",
+                    "grey",
+                ];
+
+                for (var i = 0; i < cnt; i++) {
+                    app.loadDestination(app.destinations[i], colors[i]);
+                }
+            },
+
+            // Load and draw one destination POI
+            loadDestination: function (poi, color) {
+                app.loadRoute(app.origin.getLatLng(), poi.loc, color, function (routes, duration, data) {
+                    var marker = L.marker(L.latLng(data.plan.to.lat, data.plan.to.lon), {
+                        title: poi.name,
+                        icon: L.divIcon({
+                            className: "icon icon-" + color,
+                            html: poi.name + "<br />" + Math.round(duration / 60) + " min"
+                        })
+                    });
+
+                    routes.push(marker);
+                    app.overlays.push(L.layerGroup(routes).addTo(map));
+                });
+            },
+
+            // Load a route using Metromobilité OTP
+            loadRoute: function (o, d, color, callback) {
+                var server = "http://data.metromobilite.fr",
+                    uri = server + "/otp/routers/default/plan?mode=BICYCLE&fromPlace=" + o.lat + "," + o.lng +
+                        "&toPlace="+ d.lat + "," + d.lng;
+
+                $.getJSON(uri, function (data) {
+                    var routes = [];
+                    var duration = Infinity;
+
+                    for (var i = 0; i < data.plan.itineraries.length; i++) {
+                        var way = data.plan.itineraries[i];
+
+                        if (way.duration < duration) {
+                            duration = way.duration;
+                        }
+
+                        for (var j = 0; j < way.legs.length; j++) {
+                            routes.push(
+                                L
+                                    .polyline(geo.DecodePolyline(way.legs[j].legGeometry.points), {
+                                        color: color,
+                                        stroke: true,
+                                        weight: (i > 0) ? "5" : "10",
+                                        dashArray: (way.legs[j].mode !== "BICYCLE") ? "5, 15" : null,
+                                    })
+                                    .bindPopup(
+                                        "<b>Itinéraire #" + (i + 1) + "/" + data.plan.itineraries.length + "</b><br />" +
+                                        "Origine : " + data.plan.from.name + "<br />" +
+                                        "Destination : " + data.plan.to.name + "<br />" +
+                                        "Distance : " + Math.round(way.walkDistance / 1000) + "km. <br />" +
+                                        "Durée : " + Math.round(way.duration / 60) + "min.<br /><hr />" +
+                                        "<b>Segment #" + (j + 1) + "/" + way.legs.length +
+                                        " (" + way.legs[j].mode + ")</b><br />" +
+                                        "Origine : " + way.legs[j].from.name + "<br />" +
+                                        "Destination : " + way.legs[j].to.name + "<br />" +
+                                        "Distance : " + Math.round(way.legs[j].distance / 1000) + "km. <br />" +
+                                        "Durée : " + Math.round(way.legs[j].duration / 60) + "min.<br />"
+                                    )
+                            );
+                        }
+                    }
+
+                    callback(routes, duration, data);
+                });
+            },
+        }))();
+
+        // Let's rock !
+        // ------------
+
+        Backbone.history.start();
+
+        }());
+        </script>
+    </body>
+</html>

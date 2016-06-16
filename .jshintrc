@@ -1,0 +1,19 @@
+{
+  "bitwise": true,
+  "curly": true,
+  "eqeqeq": true,
+  //"esversion": 3,
+  //"orin": true,
+  "freeze": true,
+  "futurehostile": true,
+  "globals": { "L": true, "Backbone": true, "console": true, "$": true },
+  "latedef": true,
+  "maxlen": 120,
+  "nocomma": true,
+  "noempty": true,
+  "nonbsp": true,
+  "quotmark": true,
+  "strict": true,
+  "undef": true,
+  "unused": true
+}
